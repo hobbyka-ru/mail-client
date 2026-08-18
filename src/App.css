@@ -1,0 +1,92 @@
+:root { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #242424; background: #f5f5f3; font-synthesis: none; }
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 980px; min-height: 620px; overflow: hidden; }
+button, input, textarea, select { font: inherit; }
+button { cursor: pointer; }
+.app-shell { display: flex; height: 100vh; background: #f5f5f3; }
+.sidebar { width: 248px; flex: 0 0 248px; padding: 20px 12px; overflow-y: auto; }
+.brand { display: flex; align-items: center; gap: 8px; padding: 0 10px 20px; font-size: 20px; }
+.brand-mark { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; color: #fff; background: #fc3f1d; font-weight: 800; }
+.brand .account { margin-left: auto; max-width: 95px; overflow: hidden; text-overflow: ellipsis; color: #888; font-size: 11px; font-weight: 400; }
+.compose-button { width: 100%; border: 0; border-radius: 12px; padding: 12px 16px; background: #ffdc60; color: #222; font-weight: 650; box-shadow: 0 2px 8px #c9b74a35; }
+.compose-button:hover { background: #ffd84c; }
+.nav-list { display: flex; flex-direction: column; gap: 2px; margin-top: 14px; }
+.nav-list button { display: grid; grid-template-columns: 25px 1fr auto; align-items: center; min-height: 36px; padding: 0 10px; border: 0; border-radius: 9px; color: #404040; background: transparent; text-align: left; }
+.nav-list button:hover { background: #e9e9e6; }
+.nav-list button.active { background: #e2e2de; font-weight: 650; }
+.nav-list b { font-size: 12px; color: #777; }
+.nav-glyph { width: 20px; color: #666; text-align: center; }
+.section-title { margin: 22px 10px 4px; color: #8a8a8a; font-size: 12px; font-weight: 650; text-transform: uppercase; letter-spacing: .04em; }
+.labels { margin-top: 4px; }
+.label-dot { width: 9px; height: 9px; border-radius: 50%; background: #6f86ff; display: inline-block; }
+.dot-1 { background: #fc7c7c; } .dot-2 { background: #5bc2a8; } .dot-3 { background: #b27aec; } .dot-4 { background: #f5aa45; }
+.empty-labels { color: #999; font-size: 12px; padding: 0 10px; line-height: 1.4; }
+.mail-area { min-width: 0; flex: 1; display: flex; flex-direction: column; padding: 10px 10px 10px 0; }
+.topbar { height: 52px; display: flex; align-items: center; gap: 10px; padding: 0 10px; }
+.topbar form { max-width: 650px; flex: 1; display: flex; align-items: center; gap: 8px; padding: 0 14px; border-radius: 13px; background: #e9e9e6; }
+.topbar input { width: 100%; height: 40px; border: 0; outline: 0; background: transparent; }
+.round, .reader-actions button { border: 0; border-radius: 10px; background: transparent; padding: 8px 11px; }
+.round:hover, .reader-actions button:hover { background: #e6e6e2; }
+.avatar, .sender-avatar { display: grid; place-items: center; border-radius: 50%; background: #755cd6; color: white; font-weight: 650; }
+.avatar { width: 34px; height: 34px; }
+.mail-columns { min-height: 0; flex: 1; display: flex; gap: 8px; }
+.message-column, .reader { overflow: hidden; border-radius: 16px; background: white; box-shadow: 0 1px 2px #0000000c; }
+.message-column { min-width: 420px; flex: 1; }
+.message-column.with-reader { flex: 0 0 47%; }
+.list-heading { height: 72px; display: flex; align-items: center; justify-content: space-between; padding: 14px 22px; border-bottom: 1px solid #eee; }
+.list-heading h1 { display: inline; margin: 0 9px 0 0; font-size: 21px; }
+.list-heading span { color: #999; font-size: 12px; }
+.spinner { color: #876f00 !important; }
+.message-list { height: calc(100% - 72px); overflow-y: auto; }
+.message-list article { min-height: 82px; display: grid; grid-template-columns: 28px 38px 1fr; gap: 10px; align-items: center; padding: 11px 14px; border-bottom: 1px solid #f0f0ee; cursor: pointer; }
+.message-list article:hover, .message-list article.selected { background: #f5f5f2; }
+.message-list article.unread { background: #fffdf3; }
+.star { border: 0; background: transparent; color: #c7c7c7; font-size: 18px; padding: 3px; }
+.star.on { color: #ffc400; }
+.sender-avatar { width: 34px; height: 34px; background: #8b8fa3; font-size: 14px; }
+.sender-avatar.big { width: 42px; height: 42px; }
+.message-copy { min-width: 0; }
+.message-top { display: flex; gap: 8px; }
+.message-top strong, .subject { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.message-top strong { flex: 1; font-size: 13px; }
+.message-top time { color: #999; font-size: 11px; }
+.subject { margin: 3px 0 5px; color: #666; font-size: 13px; }
+.unread .subject { color: #252525; font-weight: 600; }
+.chips { display: flex; gap: 4px; min-height: 17px; }
+.chips span { padding: 1px 6px; border-radius: 5px; background: #ececff; color: #5b61a9; font-size: 10px; }
+.reader { flex: 1.08; display: flex; flex-direction: column; }
+.reader-actions { height: 55px; display: flex; align-items: center; gap: 4px; padding: 8px 14px; border-bottom: 1px solid #eee; }
+.reader-actions select { margin-left: auto; max-width: 145px; border: 1px solid #ddd; border-radius: 8px; padding: 6px; background: #fff; }
+.reader-content { padding: 24px 28px; overflow-y: auto; }
+.reader-content h2 { margin: 0 0 22px; font-size: 23px; line-height: 1.25; }
+.sender-line { display: flex; align-items: center; gap: 11px; }
+.sender-line > div:nth-child(2) { min-width: 0; flex: 1; }
+.sender-line strong, .sender-line small { display: block; overflow: hidden; text-overflow: ellipsis; }
+.sender-line small, .sender-line time { color: #888; font-size: 11px; }
+.label-editor { display: flex; flex-wrap: wrap; gap: 6px; margin: 18px 0; }
+.label-editor button { display: flex; align-items: center; gap: 5px; border: 1px solid #ddd; border-radius: 7px; padding: 4px 8px; background: #fff; color: #666; font-size: 11px; }
+.label-editor button.chosen { border-color: #aaa; background: #f0f0ed; color: #222; }
+.message-body { margin: 24px 0; white-space: pre-wrap; word-break: break-word; font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+.error { margin: 12px; padding: 10px 12px; border-radius: 9px; background: #fff0ed; color: #a62d1d; font-size: 13px; }
+.error button { margin-left: 10px; border: 0; background: transparent; color: inherit; text-decoration: underline; }
+.empty { padding: 80px 20px; color: #999; text-align: center; }
+.compose { position: fixed; z-index: 5; right: 26px; bottom: 20px; width: 560px; height: 570px; display: flex; flex-direction: column; border-radius: 16px; background: white; box-shadow: 0 18px 70px #0004; overflow: hidden; }
+.compose header { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; background: #f1f1ee; }
+.compose header button { border: 0; background: transparent; font-size: 22px; }
+.compose > input { height: 48px; padding: 0 18px; border: 0; border-bottom: 1px solid #eee; outline: 0; }
+.compose-editor { flex: 1; padding: 18px; overflow-y: auto; outline: 0; }
+.compose-editor:empty::before { content: attr(data-placeholder); color: #999; }
+.attachments { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 12px; }
+.attachments button { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: 0; border-radius: 7px; padding: 5px 8px; background: #eee; color: #555; font-size: 11px; }
+.compose footer { display: flex; align-items: center; gap: 6px; padding: 12px; border-top: 1px solid #eee; }
+.compose footer .compose-button { width: auto; padding: 10px 24px; }
+.format { border: 0; border-radius: 8px; padding: 8px 11px; background: transparent; font-weight: 700; }
+.account-screen { height: 100vh; display: grid; place-items: center; background: #f5f5f3; }
+.account-screen form { width: 410px; padding: 34px; border-radius: 20px; background: white; box-shadow: 0 18px 70px #0001; }
+.brand.large { padding: 0; }
+.account-screen h1 { margin: 32px 0 8px; font-size: 26px; }
+.account-screen p { margin: 0 0 25px; color: #777; font-size: 14px; line-height: 1.45; }
+.account-screen label { display: block; margin: 14px 0; color: #555; font-size: 13px; }
+.account-screen input { width: 100%; margin-top: 6px; padding: 12px; border: 1px solid #ddd; border-radius: 9px; outline: 0; }
+.account-screen .compose-button { margin-top: 10px; }
+@media (max-width: 1120px) { .sidebar { width: 210px; flex-basis: 210px; } .message-column.with-reader { flex-basis: 44%; } .reader-content { padding: 20px; } }
