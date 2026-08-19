@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "perf:cache": "cargo test --manifest-path src-tauri/Cargo.toml --release cached_full_text_search_benchmark -- --ignored --nocapture",
     "preview": "vite preview",
     "tauri": "tauri"
   },

@@ -1,4 +1,30 @@
-:root { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #242424; background: #f5f5f3; font-synthesis: none; }
+/* Hallmark · pre-emit critique: P4 H4 E4 S5 R5 V4 · genre: atmospheric · macrostructure: Workbench · tone: utilitarian · anchor hue: amber · designed-as-app · contrast: pass (40–41) */
+:root {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: var(--color-ink); background: var(--color-paper); font-synthesis: none;
+  color-scheme: dark;
+  --color-paper: oklch(13% 0.01 255);
+  --color-paper-2: oklch(17% 0.012 255);
+  --color-paper-3: oklch(21% 0.014 255);
+  --color-paper-4: oklch(26% 0.016 255);
+  --color-ink: oklch(94% 0.008 255);
+  --color-ink-2: oklch(72% 0.015 255);
+  --color-rule: oklch(32% 0.014 255);
+  --color-accent: oklch(84% 0.17 88);
+  --color-accent-hover: oklch(88% 0.17 88);
+  --color-accent-ink: oklch(18% 0.025 80);
+  --color-focus: oklch(82% 0.16 88);
+  --color-danger: oklch(70% 0.18 28);
+  --color-danger-paper: oklch(23% 0.05 28);
+  --color-danger-ink: oklch(83% 0.1 28);
+  --color-disabled: oklch(48% 0.012 255);
+  --color-unread: oklch(19% 0.022 88);
+  --color-chip: oklch(28% 0.05 285);
+  --color-chip-ink: oklch(82% 0.09 285);
+  --color-star: oklch(48% 0.01 255);
+  --color-overlay: oklch(3% 0.005 255 / .72);
+  --shadow-popover: 0 18px 54px oklch(3% 0.005 255 / .55);
+}
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 980px; min-height: 620px; overflow: hidden; }
 button, input, textarea, select { font: inherit; }
@@ -17,20 +43,34 @@ button { cursor: pointer; }
 .nav-list b { font-size: 12px; color: #777; }
 .nav-glyph { width: 20px; color: #666; text-align: center; }
 .section-title { margin: 22px 10px 4px; color: #8a8a8a; font-size: 12px; font-weight: 650; text-transform: uppercase; letter-spacing: .04em; }
+.label-title { display: flex; align-items: center; justify-content: space-between; }
+.label-title button { width: 24px; height: 24px; border: 0; border-radius: 7px; background: transparent; color: #777; font-size: 18px; line-height: 1; }
+.label-title button:hover { background: #e9e9e6; }
 .labels { margin-top: 4px; }
 .label-dot { width: 9px; height: 9px; border-radius: 50%; background: #6f86ff; display: inline-block; }
 .dot-1 { background: #fc7c7c; } .dot-2 { background: #5bc2a8; } .dot-3 { background: #b27aec; } .dot-4 { background: #f5aa45; }
 .empty-labels { color: #999; font-size: 12px; padding: 0 10px; line-height: 1.4; }
-.mail-area { min-width: 0; flex: 1; display: flex; flex-direction: column; padding: 10px 10px 10px 0; }
+.mail-area { min-width: 0; flex: 1; display: flex; flex-direction: column; padding: 0; }
 .topbar { height: 52px; display: flex; align-items: center; gap: 10px; padding: 0 10px; }
 .topbar form { max-width: 650px; flex: 1; display: flex; align-items: center; gap: 8px; padding: 0 14px; border-radius: 13px; background: #e9e9e6; }
 .topbar input { width: 100%; height: 40px; border: 0; outline: 0; background: transparent; }
 .round, .reader-actions button { border: 0; border-radius: 10px; background: transparent; padding: 8px 11px; }
 .round:hover, .reader-actions button:hover { background: #e6e6e2; }
 .avatar, .sender-avatar { display: grid; place-items: center; border-radius: 50%; background: #755cd6; color: white; font-weight: 650; }
-.avatar { width: 34px; height: 34px; }
-.mail-columns { min-height: 0; flex: 1; display: flex; gap: 8px; }
-.message-column, .reader { overflow: hidden; border-radius: 16px; background: white; box-shadow: 0 1px 2px #0000000c; }
+.avatar { width: 34px; height: 34px; border: 0; }
+.account-control { position: relative; }
+.account-menu { position: absolute; z-index: 12; top: 42px; right: 0; min-width: 230px; padding: 10px; border: 1px solid #ddd; border-radius: 12px; background: #fff; box-shadow: 0 12px 35px #0002; }
+.account-menu strong { display: block; padding: 8px; font-size: 13px; }
+.account-menu button { width: 100%; padding: 9px; border: 0; border-radius: 8px; background: transparent; text-align: left; }
+.account-menu button:hover { background: #f0f0ed; }
+.actionbar { min-height: 48px; display: flex; align-items: center; gap: 5px; padding: 5px 12px; border-bottom: 1px solid #ddd; background: #fff; }
+.actionbar button, .actionbar select { min-height: 34px; padding: 6px 9px; border: 0; border-radius: 8px; background: transparent; color: #444; }
+.actionbar button:hover:not(:disabled), .actionbar select:hover:not(:disabled) { background: #f0f0ed; }
+.actionbar button:disabled, .actionbar select:disabled { color: #b5b5b5; cursor: default; }
+.selection-banner { padding: 8px 16px; background: #fff7cf; color: #5e5318; font-size: 13px; text-align: center; }
+.selection-banner button { border: 0; background: transparent; color: #725f00; font-weight: 700; text-decoration: underline; }
+.mail-columns { min-height: 0; flex: 1; display: flex; gap: 0; }
+.message-column, .reader { overflow: hidden; border-radius: 0; background: white; box-shadow: none; }
 .message-column { min-width: 420px; flex: 1; }
 .message-column.with-reader { flex: 0 0 47%; }
 .list-heading { height: 72px; display: flex; align-items: center; justify-content: space-between; padding: 14px 22px; border-bottom: 1px solid #eee; }
@@ -38,7 +78,8 @@ button { cursor: pointer; }
 .list-heading span { color: #999; font-size: 12px; }
 .spinner { color: #876f00 !important; }
 .message-list { height: calc(100% - 72px); overflow-y: auto; }
-.message-list article { min-height: 82px; display: grid; grid-template-columns: 28px 38px 1fr; gap: 10px; align-items: center; padding: 11px 14px; border-bottom: 1px solid #f0f0ee; cursor: pointer; }
+.message-list article { min-height: 82px; display: grid; grid-template-columns: 20px 28px 38px 1fr; gap: 8px; align-items: center; padding: 11px 14px; border-bottom: 1px solid #f0f0ee; cursor: pointer; }
+.message-check { width: 17px; height: 17px; margin: 0; accent-color: #ffcc32; }
 .message-list article:hover, .message-list article.selected { background: #f5f5f2; }
 .message-list article.unread { background: #fffdf3; }
 .star { border: 0; background: transparent; color: #c7c7c7; font-size: 18px; padding: 3px; }
@@ -51,10 +92,11 @@ button { cursor: pointer; }
 .message-top strong { flex: 1; font-size: 13px; }
 .message-top time { color: #999; font-size: 11px; }
 .subject { margin: 3px 0 5px; color: #666; font-size: 13px; }
+.paperclip { margin-left: 7px; font-size: 11px; }
 .unread .subject { color: #252525; font-weight: 600; }
 .chips { display: flex; gap: 4px; min-height: 17px; }
 .chips span { padding: 1px 6px; border-radius: 5px; background: #ececff; color: #5b61a9; font-size: 10px; }
-.reader { flex: 1.08; display: flex; flex-direction: column; }
+.reader { flex: 1.08; display: flex; flex-direction: column; border-left: 1px solid var(--color-rule); }
 .reader-actions { height: 55px; display: flex; align-items: center; gap: 4px; padding: 8px 14px; border-bottom: 1px solid #eee; }
 .reader-actions select { margin-left: auto; max-width: 145px; border: 1px solid #ddd; border-radius: 8px; padding: 6px; background: #fff; }
 .reader-content { padding: 24px 28px; overflow-y: auto; }
@@ -67,6 +109,17 @@ button { cursor: pointer; }
 .label-editor button { display: flex; align-items: center; gap: 5px; border: 1px solid #ddd; border-radius: 7px; padding: 4px 8px; background: #fff; color: #666; font-size: 11px; }
 .label-editor button.chosen { border-color: #aaa; background: #f0f0ed; color: #222; }
 .message-body { margin: 24px 0; white-space: pre-wrap; word-break: break-word; font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+.incoming-attachments { margin: 20px 0; padding: 14px; border-radius: 12px; background: #f6f6f3; }
+.attachment-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.attachment-heading button, .attachment-card button { border: 0; border-radius: 7px; padding: 6px 8px; background: #fff; color: #555; }
+.attachment-card { display: grid; grid-template-columns: 32px 1fr auto auto; gap: 8px; align-items: center; padding: 8px 0; border-top: 1px solid #e5e5e1; }
+.attachment-card.with-preview { grid-template-columns: 112px 1fr auto auto; }
+.attachment-card img { width: 104px; height: 78px; border-radius: 8px; background: #e9e9e6; object-fit: cover; }
+.attachment-card:first-of-type { border-top: 0; }
+.attachment-card div { min-width: 0; }
+.attachment-card strong, .attachment-card small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attachment-card small { margin-top: 2px; color: #888; font-size: 10px; }
+.file-icon { color: #777; font-size: 24px; text-align: center; }
 .error { margin: 12px; padding: 10px 12px; border-radius: 9px; background: #fff0ed; color: #a62d1d; font-size: 13px; }
 .error button { margin-left: 10px; border: 0; background: transparent; color: inherit; text-decoration: underline; }
 .empty { padding: 80px 20px; color: #999; text-align: center; }
@@ -76,11 +129,47 @@ button { cursor: pointer; }
 .compose > input { height: 48px; padding: 0 18px; border: 0; border-bottom: 1px solid #eee; outline: 0; }
 .compose-editor { flex: 1; padding: 18px; overflow-y: auto; outline: 0; }
 .compose-editor:empty::before { content: attr(data-placeholder); color: #999; }
-.attachments { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 12px; }
-.attachments button { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: 0; border-radius: 7px; padding: 5px 8px; background: #eee; color: #555; font-size: 11px; }
+.compose-attachments { max-height: 150px; padding: 8px 12px; overflow-y: auto; background: #fafaf8; }
+.compose-attachments > div { display: grid; grid-template-columns: 22px 1fr auto 25px; gap: 6px; align-items: center; padding: 5px; }
+.compose-attachments strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.compose-attachments small, .compose-attachments p { color: #888; font-size: 11px; }
+.compose-attachments button { border: 0; background: transparent; }
+.compose-attachments p { margin: 5px; text-align: right; }
 .compose footer { display: flex; align-items: center; gap: 6px; padding: 12px; border-top: 1px solid #eee; }
 .compose footer .compose-button { width: auto; padding: 10px 24px; }
 .format { border: 0; border-radius: 8px; padding: 8px 11px; background: transparent; font-weight: 700; }
+.attach-button { margin-left: auto; border: 0; border-radius: 8px; padding: 8px 11px; background: transparent; color: #555; }
+.attach-button:hover { background: #f0f0ed; }
+.context-menu { position: fixed; z-index: 20; width: 225px; padding: 7px; border: 1px solid #ddd; border-radius: 13px; background: #fff; box-shadow: 0 16px 45px #0003; }
+.context-menu button, .context-menu label { width: 100%; display: block; padding: 8px 10px; border: 0; border-radius: 8px; background: transparent; color: #333; text-align: left; }
+.context-menu button:hover { background: #f0f0ed; }
+.context-menu hr { margin: 5px; border: 0; border-top: 1px solid #eee; }
+.context-menu label { color: #777; font-size: 11px; }
+.context-menu select { width: 100%; margin-top: 4px; padding: 5px; border: 1px solid #ddd; border-radius: 6px; background: #fff; }
+.account-overlay { position: fixed; z-index: 30; inset: 0; background: #0004; }
+.confirm-overlay { position: fixed; z-index: 40; inset: 0; display: grid; place-items: center; background: #0005; }
+.confirm-card { width: min(420px, calc(100vw - 32px)); padding: 24px; border-radius: 16px; background: #fff; box-shadow: 0 24px 80px #0003; }
+.confirm-card h2 { margin: 0 0 10px; font-size: 20px; }
+.confirm-card p { margin: 0 0 22px; color: #555; }
+.confirm-card div { display: flex; justify-content: flex-end; gap: 8px; }
+.confirm-card button { padding: 10px 16px; border: 0; border-radius: 9px; }
+.confirm-card .danger { background: #d93025; color: #fff; }
+.label-manager { width: min(570px, calc(100vw - 32px)); max-height: min(650px, calc(100vh - 40px)); display: flex; flex-direction: column; padding: 22px; border-radius: 16px; background: #fff; box-shadow: 0 24px 80px #0003; }
+.label-manager header { display: flex; align-items: center; justify-content: space-between; }
+.label-manager h2 { margin: 0; font-size: 21px; }
+.label-manager header button { border: 0; background: transparent; font-size: 24px; }
+.label-manager form { display: flex; gap: 8px; margin: 18px 0 10px; }
+.label-manager input { min-width: 0; flex: 1; padding: 9px 10px; border: 1px solid #ddd; border-radius: 8px; outline: 0; }
+.label-manager form button, .managed-labels button { border: 0; border-radius: 8px; padding: 8px 10px; background: #f0f0ed; }
+.label-manager form button { background: #ffdc60; font-weight: 650; }
+.managed-labels { overflow-y: auto; }
+.managed-labels > div { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto auto; gap: 8px; align-items: center; padding: 9px 2px; border-top: 1px solid #eee; }
+.managed-labels span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.managed-labels small { margin-left: 8px; color: #999; }
+.managed-labels .delete-label { color: #b3261e; }
+.account-buttons { display: flex; gap: 8px; }
+.account-buttons .compose-button { flex: 1; }
+.secondary { border: 0; border-radius: 10px; padding: 10px 15px; background: #eee; }
 .account-screen { height: 100vh; display: grid; place-items: center; background: #f5f5f3; }
 .account-screen form { width: 410px; padding: 34px; border-radius: 20px; background: white; box-shadow: 0 18px 70px #0001; }
 .brand.large { padding: 0; }
@@ -90,3 +179,80 @@ button { cursor: pointer; }
 .account-screen input { width: 100%; margin-top: 6px; padding: 12px; border: 1px solid #ddd; border-radius: 9px; outline: 0; }
 .account-screen .compose-button { margin-top: 10px; }
 @media (max-width: 1120px) { .sidebar { width: 210px; flex-basis: 210px; } .message-column.with-reader { flex-basis: 44%; } .reader-content { padding: 20px; } }
+
+/* Dark product shell. Kept as a single override layer so mail behaviour remains untouched. */
+html, body { background: var(--color-paper); overflow-x: clip; }
+button, input, textarea, select { color: inherit; }
+button:focus-visible, input:focus-visible, select:focus-visible, [contenteditable]:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+.app-shell, .account-screen { background: var(--color-paper); }
+.sidebar { display: flex; flex-direction: column; overflow: hidden; border-right: 1px solid var(--color-rule); background: var(--color-paper-2); }
+.sidebar-scroll { min-height: 0; flex: 1; overflow-y: auto; }
+.brand { color: var(--color-ink); }
+.brand-logo { width: 32px; height: 32px; border-radius: 9px; object-fit: contain; }
+.compose-button { background: var(--color-accent); color: var(--color-accent-ink); box-shadow: none; }
+.compose-button:hover { background: var(--color-accent-hover); }
+.section-title { color: var(--color-ink-2); }
+.nav-title { display: flex; align-items: center; justify-content: space-between; }
+.nav-title button { width: 26px; height: 26px; border: 0; border-radius: 7px; background: transparent; color: var(--color-ink-2); font-size: 19px; line-height: 1; }
+.nav-title button:hover { background: var(--color-paper-4); color: var(--color-ink); }
+.nav-list button { color: var(--color-ink-2); }
+.nav-list button:hover { background: var(--color-paper-3); color: var(--color-ink); }
+.nav-list button.active { background: var(--color-paper-4); color: var(--color-ink); }
+.nav-list b, .nav-glyph { color: var(--color-ink-2); }
+.sidebar-account { position: relative; padding: 12px 6px 0; border-top: 1px solid var(--color-rule); }
+.settings-button { display: grid; place-items: center; width: 40px; height: 40px; border: 0; border-radius: 10px; background: transparent; color: var(--color-ink-2); font-size: 21px; }
+.settings-button:hover { background: var(--color-paper-4); color: var(--color-ink); }
+.sidebar-account .account-menu { top: auto; right: auto; bottom: 48px; left: 6px; }
+.topbar form { background: var(--color-paper-3); }
+.topbar input::placeholder, .compose-editor:empty::before { color: var(--color-ink-2); }
+.round, .reader-actions button { color: var(--color-ink-2); }
+.round:hover, .reader-actions button:hover { background: var(--color-paper-4); color: var(--color-ink); }
+.account-menu, .context-menu { border-color: var(--color-rule); background: var(--color-paper-3); box-shadow: var(--shadow-popover); }
+.account-menu button, .context-menu button, .context-menu label { color: var(--color-ink); }
+.account-menu button:hover, .context-menu button:hover { background: var(--color-paper-4); }
+.context-menu hr { border-color: var(--color-rule); }
+.context-menu select { border-color: var(--color-rule); background: var(--color-paper-2); }
+.context-menu button:disabled { color: var(--color-ink-2); cursor: default; }
+.danger-text { color: var(--color-danger) !important; }
+.nav-context { width: 185px; }
+.actionbar { border-color: var(--color-rule); background: var(--color-paper-2); }
+.actionbar button, .actionbar select { color: var(--color-ink-2); }
+.actionbar select { background: var(--color-paper-2); }
+.actionbar button:hover:not(:disabled), .actionbar select:hover:not(:disabled) { background: var(--color-paper-4); color: var(--color-ink); }
+.actionbar button:disabled, .actionbar select:disabled { color: var(--color-disabled); }
+.selection-banner { background: oklch(24% 0.045 88); color: var(--color-accent); }
+.selection-banner button { color: var(--color-accent); }
+.message-column, .reader, .compose, .confirm-card, .label-manager, .folder-editor, .account-screen form { background: var(--color-paper-2); box-shadow: none; }
+.compose, .account-screen form { border: 1px solid var(--color-rule); }
+.list-heading, .reader-actions, .compose > input, .compose footer, .managed-labels > div { border-color: var(--color-rule); }
+.list-heading span, .message-top time, .sender-line small, .sender-line time, .attachment-card small, .compose-attachments small, .compose-attachments p, .account-screen p, .managed-labels small { color: var(--color-ink-2); }
+.message-list article { border-color: var(--color-rule); }
+.message-list article:hover, .message-list article.selected { background: var(--color-paper-3); }
+.message-list article.unread { background: var(--color-unread); }
+.subject { color: var(--color-ink-2); }
+.unread .subject { color: var(--color-ink); }
+.chips span { background: var(--color-chip); color: var(--color-chip-ink); }
+.star { color: var(--color-star); }
+.star.on { color: var(--color-accent); }
+.reader-actions select, .label-editor button, .attachment-heading button, .attachment-card button { border-color: var(--color-rule); background: var(--color-paper-3); color: var(--color-ink-2); }
+.label-editor button.chosen { border-color: var(--color-ink-2); background: var(--color-paper-4); color: var(--color-ink); }
+.incoming-attachments, .compose-attachments { background: var(--color-paper-3); }
+.attachment-card { border-color: var(--color-rule); }
+.attachment-card img { background: var(--color-paper-4); }
+.error { background: var(--color-danger-paper); color: var(--color-danger-ink); }
+.compose header { background: var(--color-paper-3); }
+.compose > input, .compose-editor { background: var(--color-paper-2); }
+.format, .attach-button, .compose header button, .compose-attachments button { color: var(--color-ink-2); }
+.format:hover, .attach-button:hover { background: var(--color-paper-4); color: var(--color-ink); }
+.account-overlay, .confirm-overlay { background: var(--color-overlay); }
+.confirm-card p, .account-screen label { color: var(--color-ink-2); }
+.secondary, .label-manager form button, .managed-labels button { background: var(--color-paper-4); color: var(--color-ink); }
+.label-manager input, .account-screen input, .folder-editor input { border: 1px solid var(--color-rule); background: var(--color-paper-3); color: var(--color-ink); }
+.folder-editor { width: min(430px, calc(100vw - 32px)); padding: 24px; border: 1px solid var(--color-rule); border-radius: 16px; box-shadow: var(--shadow-popover); }
+.folder-editor h2 { margin: 0 0 18px; font-size: 20px; }
+.folder-editor input { width: 100%; padding: 11px 12px; border-radius: 9px; }
+.folder-editor > div:last-child { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+.folder-editor .compose-button { width: auto; padding: 10px 16px; }
+.managed-labels .delete-label { color: var(--color-danger); }
+.account-screen form { box-shadow: var(--shadow-popover); }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; } }

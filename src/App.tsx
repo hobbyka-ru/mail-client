@@ -1,182 +1,136 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
+import { listen } from "@tauri-apps/api/event";
+import { open, save } from "@tauri-apps/plugin-dialog";
+import { openPath } from "@tauri-apps/plugin-opener";
 import "./App.css";
+import hobbykaLogo from "./assets/hobbyka-logo.svg";
 
 type Account = { email: string; imapHost: string; imapPort: number; smtpHost: string; smtpPort: number };
 type Folder = { name: string; path: string; rawPath: string; specialUse?: string; total: number; unseen: number };
 type Label = { name: string; count: number };
-type Message = { uid: number; subject: string; fromName: string; fromAddress: string; date: number; seen: boolean; flagged: boolean; labels: string[]; size: number };
+type Attachment = { id: number; filename: string; mimeType: string; size: number };
+type AttachmentPreview = { id: number; url: string };
+type LocalAttachment = { path: string; filename: string; size: number };
+type Message = { uid: number; subject: string; fromName: string; fromAddress: string; date: number; seen: boolean; flagged: boolean; labels: string[]; size: number; hasAttachments: boolean };
 type Page = { items: Message[]; total: number; unseen: number };
-type Detail = Message & { to: string; bodyText?: string; bodyHtml?: string };
+type Detail = Message & { to: string; bodyText?: string; bodyHtml?: string; attachments: Attachment[] };
+type Selection = { kind: "uids"; uids: number[] } | { kind: "all"; label?: string | null; query?: string | null };
+type Action = { type: "seen"; enabled: boolean } | { type: "flagged"; enabled: boolean } | { type: "label"; name: string; enabled: boolean } | { type: "move"; destination: string } | { type: "delete" | "archive" | "spam" };
+type Draft = { to: string; subject: string; text: string; html: string; attachments: LocalAttachment[] };
+type ContextMenu = { x: number; y: number; message: Message };
+type NavContext = { x: number; y: number; kind: "folder"; folder: Folder } | { x: number; y: number; kind: "label"; label: Label };
+type FolderDialog = { mode: "create" } | { mode: "rename"; folder: Folder };
+type PendingAction = { action: Action; selection: Selection; count: number };
 
 const defaults: Account = { email: "", imapHost: "imap.yandex.ru", imapPort: 993, smtpHost: "smtp.yandex.ru", smtpPort: 465 };
+const emptyPage: Page = { items: [], total: 0, unseen: 0 };
 const glyphs: Record<string, string> = { inbox: "▰", sent: "↗", drafts: "□", trash: "⌫", junk: "!", archive: "▣" };
 
-function friendlyDate(value: number) {
-  const date = new Date(value * 1000);
-  return date.toDateString() === new Date().toDateString()
-    ? date.toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" })
-    : date.toLocaleDateString("ru", { day: "numeric", month: "short" });
-}
+function friendlyDate(value: number) { const date = new Date(value * 1000); return date.toDateString() === new Date().toDateString() ? date.toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" }) : date.toLocaleDateString("ru", { day: "numeric", month: "short" }); }
+function humanSize(value: number) { if (value < 1024) return `${value} Б`; if (value < 1024 * 1024) return `${Math.round(value / 1024)} КБ`; return `${(value / 1024 / 1024).toFixed(1)} МБ`; }
+function prefixedSubject(subject: string, prefix: "Re" | "Fwd") { return new RegExp(`^${prefix}:`, "i").test(subject) ? subject : `${prefix}: ${subject}`; }
+function escapeHtml(value: string) { return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[character] ?? character)); }
 
 export default function App() {
-  const [account, setAccount] = useState<Account>();
-  const [folders, setFolders] = useState<Folder[]>([]);
-  const [labels, setLabels] = useState<Label[]>([]);
-  const [folder, setFolder] = useState<Folder>();
-  const [page, setPage] = useState<Page>({ items: [], total: 0, unseen: 0 });
-  const [selected, setSelected] = useState<Detail>();
-  const [activeLabel, setActiveLabel] = useState("");
-  const [search, setSearch] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [compose, setCompose] = useState(false);
+  const [account, setAccount] = useState<Account>(); const [folders, setFolders] = useState<Folder[]>([]); const [labels, setLabels] = useState<Label[]>([]); const [folder, setFolder] = useState<Folder>(); const [page, setPage] = useState<Page>(emptyPage); const [selected, setSelected] = useState<Detail>();
+  const [checked, setChecked] = useState<Set<number>>(new Set()); const [allScope, setAllScope] = useState(false); const [activeLabel, setActiveLabel] = useState(""); const [activeQuery, setActiveQuery] = useState(""); const [search, setSearch] = useState(""); const [loading, setLoading] = useState(true); const [refreshing, setRefreshing] = useState(false); const [error, setError] = useState("");
+  const [draft, setDraft] = useState<Draft>(); const [contextMenu, setContextMenu] = useState<ContextMenu>(); const [navContext, setNavContext] = useState<NavContext>(); const [accountMenu, setAccountMenu] = useState(false); const [changingAccount, setChangingAccount] = useState(false); const [managingLabels, setManagingLabels] = useState<string | boolean>(false); const [folderDialog, setFolderDialog] = useState<FolderDialog>(); const [pendingAction, setPendingAction] = useState<PendingAction>(); const [imagePreviews, setImagePreviews] = useState<Record<number, string>>({}); const refreshCurrent = useRef<() => void>(() => undefined);
+  const actionsInFlight = useRef(0); const pendingMailChange = useRef(false);
 
-  useEffect(() => {
-    invoke<Account>("get_account").then((value) => { setAccount(value); void boot(); }).catch(() => setLoading(false));
-  }, []);
+  useEffect(() => { invoke<Account>("get_account").then((value) => { setAccount(value); void boot(value); }).catch(() => setLoading(false)); }, []);
+  useEffect(() => { if (!folder) return; let dispose: (() => void) | undefined; void listen<string>("mail-changed", (event) => { if (event.payload !== folder.rawPath) return; if (actionsInFlight.current) pendingMailChange.current = true; else refreshCurrent.current(); }).then((unlisten) => { dispose = unlisten; void invoke("watch_folder", { rawPath: folder.rawPath }); }); return () => dispose?.(); }, [folder?.rawPath]);
+  useEffect(() => { const close = () => { setContextMenu(undefined); setNavContext(undefined); setAccountMenu(false); }; const blockNativeMenu = (event: MouseEvent) => event.preventDefault(); window.addEventListener("click", close); window.addEventListener("blur", close); window.addEventListener("contextmenu", blockNativeMenu, true); return () => { window.removeEventListener("click", close); window.removeEventListener("blur", close); window.removeEventListener("contextmenu", blockNativeMenu, true); }; }, []);
+  useEffect(() => { const escape = (event: KeyboardEvent) => { if (event.key === "Escape") { setChecked(new Set()); setAllScope(false); } }; window.addEventListener("keydown", escape); return () => window.removeEventListener("keydown", escape); }, []);
+  useEffect(() => { let cancelled = false; setImagePreviews({}); if (!folder || !selected?.attachments.some((attachment) => attachment.mimeType.startsWith("image/"))) return; void invoke<AttachmentPreview[]>("prepare_image_previews", { rawPath: folder.rawPath, uid: selected.uid }).then((items) => { if (!cancelled) setImagePreviews(Object.fromEntries(items.map((item) => [item.id, item.url]))); }).catch((reason) => { if (!cancelled) setError(String(reason)); }); return () => { cancelled = true; }; }, [folder?.rawPath, selected?.uid]);
+  refreshCurrent.current = () => { if (folder) void loadMessages(folder, activeLabel, activeQuery, false); };
 
-  async function boot() {
+  async function boot(current: Account) {
     setLoading(true); setError("");
     try {
-      const nextFolders = await invoke<Folder[]>("list_folders");
-      setFolders(nextFolders);
-      const inbox = nextFolders.find((item) => item.specialUse === "inbox") ?? nextFolders[0];
-      if (inbox) await openFolder(inbox);
-      invoke<Label[]>("list_labels", { rawPath: inbox?.rawPath ?? "INBOX" }).then(setLabels).catch(() => undefined);
-    } catch (reason) { setError(String(reason)); }
-    finally { setLoading(false); }
+      const [cachedFolders, cachedLabels] = await Promise.all([invoke<Folder[]>("get_cached_folders"), invoke<Label[]>("get_cached_labels")]);
+      if (cachedLabels.length) setLabels(cachedLabels);
+      if (cachedFolders.length) { setFolders(cachedFolders); const inbox = cachedFolders.find((item) => item.specialUse === "inbox") ?? cachedFolders[0]; setFolder(inbox); const cachedPage = await invoke<Page | null>("get_cached_messages", { rawPath: inbox.rawPath }); if (cachedPage) setPage(cachedPage); setAccount(current); return; }
+      const nextFolders = await invoke<Folder[]>("list_folders"); setFolders(nextFolders); const inbox = nextFolders.find((item) => item.specialUse === "inbox") ?? nextFolders[0];
+      if (inbox) { setFolder(inbox); await loadMessages(inbox, "", ""); void invoke<Label[]>("list_labels", { rawPath: inbox.rawPath }).then(setLabels).catch(() => undefined); }
+      setAccount(current);
+    } catch (reason) { setError(String(reason)); } finally { setLoading(false); }
   }
 
-  async function loadMessages(target = folder, label = activeLabel, query = search) {
-    if (!target) return;
-    setLoading(true); setError("");
-    try {
-      const nextPage = await invoke<Page>("list_messages", { rawPath: target.rawPath, limit: 60, label: label || null, query: query || null });
-      setPage(nextPage);
-      const visibleLabels = new Map<string, number>();
-      nextPage.items.flatMap((item) => item.labels).forEach((name) => visibleLabels.set(name, (visibleLabels.get(name) ?? 0) + 1));
-      setLabels((items) => [...items, ...[...visibleLabels].filter(([name]) => !items.some((item) => item.name === name)).map(([name, count]) => ({ name, count }))]);
-      if (!label && !query) setFolders((items) => items.map((item) => item.rawPath === target.rawPath ? { ...item, total: nextPage.total, unseen: nextPage.unseen } : item));
-    } catch (reason) { setError(String(reason)); }
-    finally { setLoading(false); }
+  async function loadMessages(target: Folder, label: string, query: string, blocking = true) {
+    blocking ? setLoading(true) : setRefreshing(true); setError("");
+    if (query) void invoke<Page>("search_cached_messages", { rawPath: target.rawPath, label: label || null, query }).then((cached) => { if (cached.items.length) setPage(cached); }).catch(() => undefined);
+    try { const nextPage = await invoke<Page>("list_messages", { rawPath: target.rawPath, limit: 60, label: label || null, query: query || null }); setPage(nextPage); const visibleLabels = new Map<string, number>(); nextPage.items.flatMap((item) => item.labels).forEach((name) => visibleLabels.set(name, (visibleLabels.get(name) ?? 0) + 1)); setLabels((items) => [...items, ...[...visibleLabels].filter(([name]) => !items.some((item) => item.name === name)).map(([name, count]) => ({ name, count }))]); if (!label && !query) setFolders((items) => items.map((item) => item.rawPath === target.rawPath ? { ...item, total: nextPage.total, unseen: nextPage.unseen } : item)); }
+    catch (reason) { setError(String(reason)); } finally { setLoading(false); setRefreshing(false); }
   }
 
-  async function openFolder(next: Folder) {
-    setFolder(next); setActiveLabel(""); setSelected(undefined);
-    await loadMessages(next, "", "");
-  }
+  function clearSelection() { setChecked(new Set()); setAllScope(false); }
+  async function openFolder(next: Folder) { setFolder(next); setActiveLabel(""); setActiveQuery(""); setSearch(""); setSelected(undefined); clearSelection(); const cached = await invoke<Page | null>("get_cached_messages", { rawPath: next.rawPath }).catch(() => null); if (cached) setPage(cached); else { setPage(emptyPage); await loadMessages(next, "", ""); } }
+  async function openLabel(name: string) { const inbox = folders.find((item) => item.specialUse === "inbox") ?? folder; if (!inbox) return; setFolder(inbox); setActiveLabel(name); setActiveQuery(""); setSelected(undefined); clearSelection(); const cached = await invoke<Page>("search_cached_messages", { rawPath: inbox.rawPath, label: name, query: "" }).catch(() => null); if (cached) setPage(cached); else await loadMessages(inbox, name, ""); }
+  async function openMessage(message: Message) { if (!folder) return; try { const detail = await invoke<Detail>("get_message", { rawPath: folder.rawPath, uid: message.uid }); setSelected(detail); if (!message.seen) await perform({ type: "seen", enabled: true }, { kind: "uids", uids: [message.uid] }, false); } catch (reason) { setError(String(reason)); } }
 
-  async function openLabel(name: string) {
-    const inbox = folders.find((item) => item.specialUse === "inbox") ?? folder;
-    if (!inbox) return;
-    setFolder(inbox); setActiveLabel(name); setSelected(undefined);
-    await loadMessages(inbox, name, "");
-  }
+  function selectionPayload(): Selection { return allScope ? { kind: "all", label: activeLabel || null, query: activeQuery || null } : { kind: "uids", uids: [...checked] }; }
+  function optimistic(action: Action, selection: Selection, source: Page) { const uids = selection.kind === "uids" ? new Set(selection.uids) : null; const target = (message: Message) => uids ? uids.has(message.uid) : true; if (["move", "delete", "archive", "spam"].includes(action.type)) { const removed = source.items.filter(target).length; return { ...source, total: Math.max(0, source.total - (selection.kind === "all" ? source.total : removed)), items: source.items.filter((item) => !target(item)) }; } return { ...source, items: source.items.map((message) => { if (!target(message)) return message; if (action.type === "seen") return { ...message, seen: action.enabled }; if (action.type === "flagged") return { ...message, flagged: action.enabled }; if (action.type === "label") return { ...message, labels: action.enabled ? Array.from(new Set([...message.labels, action.name])) : message.labels.filter((item) => item !== action.name) }; return message; }) }; }
+  async function perform(action: Action, override?: Selection, clear = true, confirmed = false) { if (!folder) return false; const selection = override ?? selectionPayload(); const count = selection.kind === "all" ? page.total : selection.uids.length; if (!count) return false; const broad = selection.kind === "all" && ["move", "delete", "archive", "spam"].includes(action.type); if (broad && !confirmed) { setPendingAction({ action, selection, count }); return false; } const beforePage = page; const beforeSelected = selected; setPage(optimistic(action, selection, page)); if (selected) { const changed = optimistic(action, selection, { items: [selected], total: 1, unseen: 0 }).items[0]; setSelected(changed ? { ...selected, ...changed } : undefined); } actionsInFlight.current += 1; try { await invoke("apply_message_action", { rawPath: folder.rawPath, selection, action }); if (clear) clearSelection(); return true; } catch (reason) { if (String(reason).startsWith("ACTION_OUTCOME_UNKNOWN")) { await loadMessages(folder, activeLabel, activeQuery, false); setError("Сервер не подтвердил результат вовремя. Состояние сверено без повторения действия."); } else { setPage(beforePage); setSelected(beforeSelected); setError(String(reason)); } return false; } finally { actionsInFlight.current -= 1; if (!actionsInFlight.current && pendingMailChange.current) { pendingMailChange.current = false; refreshCurrent.current(); } } }
+  function toggleChecked(uid: number) { setAllScope(false); setChecked((items) => { const next = new Set(items); next.has(uid) ? next.delete(uid) : next.add(uid); return next; }); }
+  function toggleVisible() { setAllScope(false); setChecked(checked.size === page.items.length ? new Set() : new Set(page.items.map((item) => item.uid))); }
 
-  async function openMessage(message: Message) {
-    if (!folder) return;
-    setSelected(await invoke<Detail>("get_message", { rawPath: folder.rawPath, uid: message.uid }));
-    if (!message.seen) {
-      await invoke("set_flag", { rawPath: folder.rawPath, uid: message.uid, flag: "seen", enabled: true });
-      setPage((value) => ({ ...value, items: value.items.map((item) => item.uid === message.uid ? { ...item, seen: true } : item) }));
-    }
-  }
+  async function prepareCompose(mode: "reply" | "forward", message: Message) { if (!folder) return; const detail = selected?.uid === message.uid ? selected : await invoke<Detail>("get_message", { rawPath: folder.rawPath, uid: message.uid }); const quoted = escapeHtml(detail.bodyText ?? "").replace(/\n/g, "<br>"); const attachments = mode === "forward" ? await invoke<LocalAttachment[]>("prepare_forward_attachments", { rawPath: folder.rawPath, uid: message.uid }) : []; setDraft({ to: mode === "reply" ? detail.fromAddress : "", subject: prefixedSubject(detail.subject, mode === "reply" ? "Re" : "Fwd"), text: `\n\n${detail.bodyText ?? ""}`, html: `<br><br><blockquote>${quoted}</blockquote>`, attachments }); }
+  async function openIncoming(attachment: Attachment) { if (!folder || !selected) return; try { const path = await invoke<string>("open_attachment", { rawPath: folder.rawPath, uid: selected.uid, attachmentId: attachment.id, filename: attachment.filename }); await openPath(path); } catch (reason) { setError(String(reason)); } }
+  async function downloadIncoming(attachment: Attachment) { if (!folder || !selected) return; const destination = await save({ defaultPath: attachment.filename }); if (!destination) return; try { await invoke("save_attachment", { rawPath: folder.rawPath, uid: selected.uid, attachmentId: attachment.id, destination }); } catch (reason) { setError(String(reason)); } }
+  async function downloadAll() { if (!folder || !selected) return; const directory = await open({ directory: true, multiple: false }); if (!directory || Array.isArray(directory)) return; try { await invoke("save_all_attachments", { rawPath: folder.rawPath, uid: selected.uid, directory }); } catch (reason) { setError(String(reason)); } }
+  function showContext(event: React.MouseEvent, message: Message) { event.preventDefault(); event.stopPropagation(); if (!allScope && !checked.has(message.uid)) setChecked(new Set([message.uid])); setContextMenu({ x: Math.min(event.clientX, window.innerWidth - 230), y: Math.min(event.clientY, window.innerHeight - 440), message }); }
+  function showNavContext(event: React.MouseEvent, target: { kind: "folder"; folder: Folder } | { kind: "label"; label: Label }) { event.preventDefault(); event.stopPropagation(); setNavContext({ ...target, x: Math.min(event.clientX, window.innerWidth - 190), y: Math.min(event.clientY, window.innerHeight - 110) }); }
+  function updateFolders(next: Folder[]) { setFolders(next); if (folder && !next.some((item) => item.rawPath === folder.rawPath)) { const inbox = next.find((item) => item.specialUse === "inbox") ?? next[0]; setFolder(inbox); setSelected(undefined); setPage(emptyPage); if (inbox) void loadMessages(inbox, "", ""); } }
+  function updateLabels(next: Label[]) { setLabels(next); if (folder && activeLabel && !next.some((label) => label.name === activeLabel)) { setActiveLabel(""); void loadMessages(folder, "", ""); } }
 
-  async function toggleStar(message: Message) {
-    if (!folder) return;
-    await invoke("set_flag", { rawPath: folder.rawPath, uid: message.uid, flag: "flagged", enabled: !message.flagged });
-    const patch = (item: Message) => item.uid === message.uid ? { ...item, flagged: !message.flagged } : item;
-    setPage((value) => ({ ...value, items: value.items.map(patch) }));
-    setSelected((value) => value?.uid === message.uid ? { ...value, flagged: !message.flagged } : value);
-  }
-
-  async function toggleLabel(name: string) {
-    if (!folder || !selected) return;
-    const enabled = !selected.labels.includes(name);
-    await invoke("set_label", { rawPath: folder.rawPath, uid: selected.uid, label: name, enabled });
-    setSelected({ ...selected, labels: enabled ? [...selected.labels, name] : selected.labels.filter((item) => item !== name) });
-    setLabels((items) => items.map((item) => item.name === name ? { ...item, count: item.count + (enabled ? 1 : -1) } : item));
-  }
-
-  async function moveTo(destination: Folder) {
-    if (!folder || !selected) return;
-    await invoke("move_message", { rawPath: folder.rawPath, uid: selected.uid, destination: destination.rawPath });
-    setSelected(undefined); await loadMessages();
-  }
-
-  const title = activeLabel ? `Метка «${activeLabel}»` : folder?.name ?? "Почта";
-  const knownLabels = useMemo(() => Array.from(new Set([...labels.map((item) => item.name), ...(selected?.labels ?? [])])), [labels, selected]);
-
-  if (!account) return <AccountScreen onSaved={(value) => { setAccount(value); void boot(); }} />;
+  const selectionCount = allScope ? page.total : checked.size; const targets = allScope ? page.items : page.items.filter((item) => checked.has(item.uid)); const allSeen = targets.length > 0 && targets.every((item) => item.seen); const allFlagged = targets.length > 0 && targets.every((item) => item.flagged); const title = activeLabel ? `Метка «${activeLabel}»` : activeQuery ? `Поиск «${activeQuery}»` : folder?.name ?? "Почта"; const knownLabels = useMemo(() => Array.from(new Set([...labels.map((item) => item.name), ...(selected?.labels ?? [])])), [labels, selected]);
+  if (!account) return <AccountScreen onSaved={(value) => { setAccount(value); void boot(value); }} />;
 
   return <div className="app-shell">
-    <aside className="sidebar">
-      <div className="brand"><span className="brand-mark">Я</span><strong>Почта</strong><span className="account">{account.email}</span></div>
-      <button className="compose-button" onClick={() => setCompose(true)}>✎&nbsp;&nbsp;Написать</button>
-      <nav className="nav-list" aria-label="Папки">
-        {folders.map((item) => <button key={item.rawPath} className={folder?.rawPath === item.rawPath && !activeLabel ? "active" : ""} onClick={() => void openFolder(item)}>
-          <span className="nav-glyph">{glyphs[item.specialUse ?? ""] ?? "○"}</span><span>{item.name}</span>{item.unseen > 0 && <b>{item.unseen}</b>}
-        </button>)}
-      </nav>
-      <div className="section-title">Метки на сервере</div>
-      <nav className="nav-list labels" aria-label="Метки">
-        {labels.map((item, index) => <button key={item.name} className={activeLabel === item.name ? "active" : ""} onClick={() => void openLabel(item.name)}>
-          <i className={`label-dot dot-${index % 5}`} /><span>{item.name}</span><b>{item.count}</b>
-        </button>)}
-        {!labels.length && <p className="empty-labels">Метки появятся после чтения с сервера</p>}
-      </nav>
-    </aside>
-
+    <aside className="sidebar"><div className="brand"><img className="brand-logo" src={hobbykaLogo} alt="" /><strong>Почта</strong></div><button className="compose-button" onClick={() => setDraft({ to: "", subject: "", text: "", html: "", attachments: [] })}>✎&nbsp;&nbsp;Написать</button><div className="sidebar-scroll"><div className="section-title nav-title"><span>Папки</span><button onClick={() => setFolderDialog({ mode: "create" })} aria-label="Создать папку">＋</button></div><nav className="nav-list" aria-label="Папки">{folders.map((item) => <button key={item.rawPath} className={folder?.rawPath === item.rawPath && !activeLabel && !activeQuery ? "active" : ""} onClick={() => void openFolder(item)} onContextMenu={(event) => showNavContext(event, { kind: "folder", folder: item })}><span className="nav-glyph">{glyphs[item.specialUse ?? ""] ?? "○"}</span><span>{item.name}</span>{item.unseen > 0 && <b>{item.unseen}</b>}</button>)}</nav><div className="section-title nav-title"><span>Метки</span><button onClick={() => setManagingLabels(true)} aria-label="Управлять метками">＋</button></div><nav className="nav-list labels" aria-label="Метки">{labels.map((item, index) => <button key={item.name} className={activeLabel === item.name ? "active" : ""} onClick={() => void openLabel(item.name)} onContextMenu={(event) => showNavContext(event, { kind: "label", label: item })}><i className={`label-dot dot-${index % 5}`} /><span>{item.name}</span><b>{item.count}</b></button>)}</nav></div><div className="sidebar-account" onClick={(event) => event.stopPropagation()}><button className="settings-button" onClick={() => setAccountMenu((value) => !value)} aria-label="Настройки аккаунта">⚙</button>{accountMenu && <div className="account-menu"><strong>{account.email}</strong><button onClick={() => { setChangingAccount(true); setAccountMenu(false); }}>Сменить аккаунт</button></div>}</div></aside>
     <main className="mail-area">
-      <header className="topbar">
-        <form onSubmit={(event) => { event.preventDefault(); void loadMessages(folder, "", search); setActiveLabel(""); }}>
-          <span>⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Найти письмо" aria-label="Найти письмо" />
-        </form>
-        <button className="round" onClick={() => void loadMessages()} title="Обновить">↻</button>
-        <div className="avatar">{account.email[0]?.toUpperCase()}</div>
-      </header>
-      <div className="mail-columns">
-        <section className={`message-column ${selected ? "with-reader" : ""}`}>
-          <div className="list-heading"><div><h1>{title}</h1><span>{page.total.toLocaleString("ru")} писем</span></div>{loading && <span className="spinner">Обновляем…</span>}</div>
-          {error && <div className="error">{error}<button onClick={() => void loadMessages()}>Повторить</button></div>}
-          <div className="message-list">
-            {!loading && !page.items.length && <div className="empty">Здесь пока нет писем</div>}
-            {page.items.map((message) => <article key={message.uid} className={`${message.seen ? "" : "unread"} ${selected?.uid === message.uid ? "selected" : ""}`} onClick={() => void openMessage(message)}>
-              <button className={`star ${message.flagged ? "on" : ""}`} onClick={(event) => { event.stopPropagation(); void toggleStar(message); }} aria-label="Пометить важным">★</button>
-              <div className="sender-avatar">{(message.fromName || message.fromAddress || "?")[0].toUpperCase()}</div>
-              <div className="message-copy"><div className="message-top"><strong>{message.fromName || message.fromAddress}</strong><time>{friendlyDate(message.date)}</time></div>
-                <div className="subject">{message.subject}</div><div className="chips">{message.labels.map((label) => <span key={label}>{label}</span>)}</div>
-              </div>
-            </article>)}
-          </div>
-        </section>
-        {selected && <section className="reader">
-          <div className="reader-actions"><button onClick={() => setSelected(undefined)}>←</button><button className={`star ${selected.flagged ? "on" : ""}`} onClick={() => void toggleStar(selected)}>★</button>
-            <select aria-label="Переместить письмо" defaultValue="" onChange={(event) => { const target = folders.find((item) => item.rawPath === event.target.value); if (target) void moveTo(target); }}><option value="" disabled>Переместить…</option>{folders.filter((item) => item.rawPath !== folder?.rawPath).map((item) => <option key={item.rawPath} value={item.rawPath}>{item.name}</option>)}</select>
-          </div>
-          <div className="reader-content"><h2>{selected.subject}</h2><div className="sender-line"><div className="sender-avatar big">{(selected.fromName || selected.fromAddress || "?")[0].toUpperCase()}</div><div><strong>{selected.fromName || selected.fromAddress}</strong><small>{selected.fromAddress}<br />Кому: {selected.to}</small></div><time>{friendlyDate(selected.date)}</time></div>
-            <div className="label-editor">{knownLabels.map((name, index) => <button key={name} className={selected.labels.includes(name) ? "chosen" : ""} onClick={() => void toggleLabel(name)}><i className={`label-dot dot-${index % 5}`} />{name}</button>)}</div>
-            <pre className="message-body">{selected.bodyText || "В письме нет текстовой версии."}</pre>
-          </div>
-        </section>}
+      <header className="topbar"><form onSubmit={(event) => { event.preventDefault(); if (!folder) return; const query = search.trim(); setActiveLabel(""); setActiveQuery(query); clearSelection(); void loadMessages(folder, "", query); }}><span>⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Адрес, имя, тема или текст письма" aria-label="Найти письмо" /></form><button className="round" onClick={() => refreshCurrent.current()} title="Обновить">↻</button></header>
+      <div className="actionbar" role="toolbar" aria-label="Действия с письмами"><input type="checkbox" checked={page.items.length > 0 && checked.size === page.items.length && !allScope} onChange={toggleVisible} aria-label="Выбрать видимые письма" /><button disabled={selectionCount !== 1} onClick={() => { const message = targets[0]; if (message) void prepareCompose("forward", message); }}>Переслать</button><button disabled={!selectionCount} onClick={() => void perform({ type: "delete" })}>Удалить</button><button disabled={!selectionCount} onClick={() => void perform({ type: "archive" })}>Архивировать</button><button disabled={!selectionCount} onClick={() => void perform({ type: "seen", enabled: !allSeen })}>{allSeen ? "Не прочитано" : "Прочитано"}</button><select disabled={!selectionCount} value="" aria-label="Переместить" onChange={(event) => { if (event.target.value) void perform({ type: "move", destination: event.target.value }); }}><option value="">В папку…</option>{folders.filter((item) => item.rawPath !== folder?.rawPath).map((item) => <option key={item.rawPath} value={item.rawPath}>{item.name}</option>)}</select><select disabled={!selectionCount} value="" aria-label="Назначить метку" onChange={(event) => { if (event.target.value) void perform({ type: "label", name: event.target.value, enabled: true }); }}><option value="">Метка…</option>{knownLabels.map((name) => <option key={name} value={name}>{name}</option>)}</select><button disabled={!selectionCount} onClick={() => void perform({ type: "spam" })}>Спам</button><button disabled={!selectionCount} onClick={() => void perform({ type: "flagged", enabled: !allFlagged })}>{allFlagged ? "Снять важное" : "Важное"}</button></div>
+      {checked.size === page.items.length && page.total > page.items.length && !allScope && <div className="selection-banner">Выбрано {checked.size} писем. <button onClick={() => setAllScope(true)}>Выбрать все {page.total.toLocaleString("ru")}</button></div>}{allScope && <div className="selection-banner">Выбраны все {page.total.toLocaleString("ru")} писем текущей выборки. <button onClick={clearSelection}>Отменить</button></div>}
+      <div className="mail-columns"><section className={`message-column ${selected ? "with-reader" : ""}`}><div className="list-heading"><div><h1>{title}</h1><span>{page.total.toLocaleString("ru")} писем</span></div>{(loading || refreshing) && <span className="spinner">Обновляем…</span>}</div>{error && <div className="error">{error}<button onClick={() => refreshCurrent.current()}>Повторить</button></div>}<div className="message-list">{!loading && !page.items.length && <div className="empty">Здесь пока нет писем</div>}{page.items.map((message) => <article key={message.uid} className={`${message.seen ? "" : "unread"} ${selected?.uid === message.uid ? "selected" : ""}`} onClick={() => void openMessage(message)} onContextMenu={(event) => showContext(event, message)}><input className="message-check" type="checkbox" checked={allScope || checked.has(message.uid)} onClick={(event) => event.stopPropagation()} onChange={() => toggleChecked(message.uid)} aria-label={`Выбрать письмо «${message.subject}»`} /><button className={`star ${message.flagged ? "on" : ""}`} onClick={(event) => { event.stopPropagation(); void perform({ type: "flagged", enabled: !message.flagged }, { kind: "uids", uids: [message.uid] }, false); }} aria-label="Пометить важным">★</button><div className="sender-avatar">{(message.fromName || message.fromAddress || "?")[0].toUpperCase()}</div><div className="message-copy"><div className="message-top"><strong>{message.fromName || message.fromAddress}</strong><time>{friendlyDate(message.date)}</time></div><div className="subject">{message.subject}{message.hasAttachments && <span className="paperclip" title="Есть вложения">📎</span>}</div><div className="chips">{message.labels.map((label) => <span key={label}>{label}</span>)}</div></div></article>)}</div></section>
+        {selected && <section className="reader"><div className="reader-actions"><button onClick={() => setSelected(undefined)}>←</button><button onClick={() => void prepareCompose("reply", selected)}>Ответить</button><button onClick={() => void prepareCompose("forward", selected)}>Переслать</button><button className={`star ${selected.flagged ? "on" : ""}`} onClick={() => void perform({ type: "flagged", enabled: !selected.flagged }, { kind: "uids", uids: [selected.uid] }, false)}>★</button></div><div className="reader-content"><h2>{selected.subject}</h2><div className="sender-line"><div className="sender-avatar big">{(selected.fromName || selected.fromAddress || "?")[0].toUpperCase()}</div><div><strong>{selected.fromName || selected.fromAddress}</strong><small>{selected.fromAddress}<br />Кому: {selected.to}</small></div><time>{friendlyDate(selected.date)}</time></div><div className="label-editor">{knownLabels.map((name, index) => <button key={name} className={selected.labels.includes(name) ? "chosen" : ""} onClick={() => void perform({ type: "label", name, enabled: !selected.labels.includes(name) }, { kind: "uids", uids: [selected.uid] }, false)}><i className={`label-dot dot-${index % 5}`} />{name}</button>)}</div>{selected.attachments.length > 0 && <section className="incoming-attachments"><div className="attachment-heading"><strong>Вложения · {selected.attachments.length}</strong><button onClick={() => void downloadAll()}>Скачать все</button></div>{selected.attachments.map((attachment) => <div className={`attachment-card ${imagePreviews[attachment.id] ? "with-preview" : ""}`} key={attachment.id}>{imagePreviews[attachment.id] ? <img src={imagePreviews[attachment.id]} alt={attachment.filename} loading="lazy" /> : <span className="file-icon">{attachment.mimeType.startsWith("image/") ? "▧" : "▤"}</span>}<div><strong>{attachment.filename}</strong><small>{attachment.mimeType} · {humanSize(attachment.size)}</small></div><button onClick={() => void openIncoming(attachment)}>Открыть</button><button onClick={() => void downloadIncoming(attachment)}>Скачать</button></div>)}</section>}<pre className="message-body">{selected.bodyText || "В письме нет текстовой версии."}</pre></div></section>}
       </div>
     </main>
-    {compose && <Compose onClose={() => setCompose(false)} />}
+    {contextMenu && <div className="context-menu" style={{ left: contextMenu.x, top: contextMenu.y }} onClick={(event) => event.stopPropagation()} role="menu"><button onClick={() => void prepareCompose("reply", contextMenu.message)}>Ответить</button><button onClick={() => void prepareCompose("forward", contextMenu.message)}>Переслать</button><hr /><button onClick={() => void perform({ type: "delete" })}>Удалить</button><button onClick={() => void perform({ type: "archive" })}>Архивировать</button><button onClick={() => void perform({ type: "seen", enabled: !contextMenu.message.seen })}>{contextMenu.message.seen ? "Не прочитано" : "Прочитано"}</button><label>В папку<select value="" onChange={(event) => { if (event.target.value) void perform({ type: "move", destination: event.target.value }); }}><option value="">Выберите…</option>{folders.filter((item) => item.rawPath !== folder?.rawPath).map((item) => <option key={item.rawPath} value={item.rawPath}>{item.name}</option>)}</select></label><label>Метка<select value="" onChange={(event) => { if (event.target.value) void perform({ type: "label", name: event.target.value, enabled: true }); }}><option value="">Выберите…</option>{knownLabels.map((name) => <option key={name}>{name}</option>)}</select></label><button onClick={() => void perform({ type: "spam" })}>Это спам</button><button onClick={() => void perform({ type: "flagged", enabled: !contextMenu.message.flagged })}>{contextMenu.message.flagged ? "Снять важное" : "Важное"}</button></div>}
+    {navContext && <div className="context-menu nav-context" style={{ left: navContext.x, top: navContext.y }} onClick={(event) => event.stopPropagation()} role="menu">{navContext.kind === "label" ? <><button onClick={() => { setManagingLabels(navContext.label.name); setNavContext(undefined); }}>Переименовать</button><button className="danger-text" onClick={() => { if (folder && window.confirm(`Удалить метку «${navContext.label.name}»? Письма останутся в почте.`)) void invoke<Label[]>("delete_label", { rawPath: folder.rawPath, name: navContext.label.name }).then(updateLabels).catch((reason) => setError(String(reason))); setNavContext(undefined); }}>Удалить</button></> : navContext.folder.specialUse ? <button disabled>Системную папку нельзя изменить</button> : <><button onClick={() => { setFolderDialog({ mode: "rename", folder: navContext.folder }); setNavContext(undefined); }}>Переименовать</button><button className="danger-text" onClick={() => { if (window.confirm(`Удалить папку «${navContext.folder.name}» и все письма в ней?`)) void invoke<Folder[]>("delete_folder", { rawPath: navContext.folder.rawPath }).then(updateFolders).catch((reason) => setError(String(reason))); setNavContext(undefined); }}>Удалить</button></>}</div>}
+    {draft && <Compose initial={draft} onClose={() => setDraft(undefined)} />}
+    {pendingAction && <div className="confirm-overlay" role="dialog" aria-modal="true" aria-labelledby="confirm-title"><div className="confirm-card"><h2 id="confirm-title">Подтвердите массовое действие</h2><p>Будет обработано писем: <strong>{pendingAction.count.toLocaleString("ru")}</strong>.</p><div><button className="secondary" onClick={() => setPendingAction(undefined)}>Отмена</button><button className="danger" onClick={() => { const pending = pendingAction; setPendingAction(undefined); void perform(pending.action, pending.selection, true, true); }}>Продолжить</button></div></div></div>}
+    {managingLabels && folder && <LabelManager rawPath={folder.rawPath} labels={labels} initial={typeof managingLabels === "string" ? managingLabels : ""} onClose={() => setManagingLabels(false)} onChange={updateLabels} />}
+    {folderDialog && <FolderEditor dialog={folderDialog} onClose={() => setFolderDialog(undefined)} onChange={updateFolders} />}
+    {changingAccount && <div className="account-overlay"><AccountScreen title="Сменить аккаунт" onCancel={() => setChangingAccount(false)} onSaved={(value) => { setChangingAccount(false); setAccount(value); setFolders([]); setLabels([]); setFolder(undefined); setPage(emptyPage); setSelected(undefined); clearSelection(); void boot(value); }} /></div>}
   </div>;
 }
 
-function AccountScreen({ onSaved }: { onSaved: (account: Account) => void }) {
-  const [account, setAccount] = useState(defaults); const [password, setPassword] = useState(""); const [error, setError] = useState(""); const [busy, setBusy] = useState(false);
-  async function save(event: FormEvent) { event.preventDefault(); setBusy(true); setError(""); try { await invoke("save_account", { account, password }); await invoke("test_account"); onSaved(account); } catch (reason) { setError(String(reason)); } finally { setBusy(false); } }
-  return <main className="account-screen"><form onSubmit={save}><div className="brand large"><span className="brand-mark">Я</span><strong>Почта</strong></div><h1>Войдите в почту</h1><p>Адрес и пароль приложения сохраняются только в защищённом хранилище компьютера.</p><label>Адрес почты<input type="email" required value={account.email} onChange={(e) => setAccount({ ...account, email: e.target.value })} placeholder="name@yandex.ru" /></label><label>Пароль приложения<input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} /></label>{error && <div className="error">{error}</div>}<button className="compose-button" disabled={busy}>{busy ? "Проверяем…" : "Войти"}</button></form></main>;
+function LabelManager({ rawPath, labels, initial, onChange, onClose }: { rawPath: string; labels: Label[]; initial: string; onChange: (labels: Label[]) => void; onClose: () => void }) {
+  const [name, setName] = useState(""); const [editing, setEditing] = useState(initial); const [editedName, setEditedName] = useState(initial); const [busy, setBusy] = useState(false); const [error, setError] = useState("");
+  async function run(command: "create_label" | "rename_label" | "delete_label", args: Record<string, string>) { setBusy(true); setError(""); try { const next = await invoke<Label[]>(command, args); onChange(next); setName(""); setEditing(""); } catch (reason) { setError(String(reason)); } finally { setBusy(false); } }
+  return <div className="confirm-overlay" role="dialog" aria-modal="true" aria-labelledby="labels-title"><section className="label-manager"><header><h2 id="labels-title">Метки</h2><button onClick={onClose} aria-label="Закрыть">×</button></header><form onSubmit={(event) => { event.preventDefault(); void run("create_label", { name }); }}><input value={name} onChange={(event) => setName(event.target.value)} maxLength={15} placeholder="Название новой метки" aria-label="Название новой метки" /><button disabled={busy || !name.trim()}>Создать</button></form><div className="managed-labels">{labels.map((label, index) => <div key={label.name}><i className={`label-dot dot-${index % 5}`} />{editing === label.name ? <input autoFocus value={editedName} maxLength={15} onChange={(event) => setEditedName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void run("rename_label", { rawPath, oldName: label.name, newName: editedName }); }} /> : <span>{label.name}<small>{label.count.toLocaleString("ru")}</small></span>}{editing === label.name ? <button disabled={busy || !editedName.trim()} onClick={() => void run("rename_label", { rawPath, oldName: label.name, newName: editedName })}>Сохранить</button> : <button onClick={() => { setEditing(label.name); setEditedName(label.name); }}>Переименовать</button>}<button className="delete-label" disabled={busy} onClick={() => { if (window.confirm(`Удалить метку «${label.name}»? Письма останутся в почте.`)) void run("delete_label", { rawPath, name: label.name }); }}>Удалить</button></div>)}</div>{error && <div className="error">{error}</div>}</section></div>;
 }
 
-function Compose({ onClose }: { onClose: () => void }) {
-  const [to, setTo] = useState(""); const [subject, setSubject] = useState(""); const [attachments, setAttachments] = useState<string[]>([]); const [busy, setBusy] = useState(false); const [error, setError] = useState(""); const editor = useRef<HTMLDivElement>(null);
-  async function attach() { const paths = await open({ multiple: true, directory: false }); if (paths) setAttachments((items) => [...items, ...(Array.isArray(paths) ? paths : [paths])]); }
-  async function send() { if (!editor.current) return; setBusy(true); setError(""); try { await invoke("send_message", { outgoing: { to, subject, text: editor.current.innerText, html: editor.current.innerHTML, attachments } }); onClose(); } catch (reason) { setError(String(reason)); } finally { setBusy(false); } }
+function FolderEditor({ dialog, onChange, onClose }: { dialog: FolderDialog; onChange: (folders: Folder[]) => void; onClose: () => void }) {
+  const [name, setName] = useState(dialog.mode === "rename" ? dialog.folder.name : ""); const [busy, setBusy] = useState(false); const [error, setError] = useState("");
+  async function submit(event: FormEvent) { event.preventDefault(); setBusy(true); setError(""); try { const folders = await invoke<Folder[]>(dialog.mode === "create" ? "create_folder" : "rename_folder", dialog.mode === "create" ? { name } : { rawPath: dialog.folder.rawPath, name }); onChange(folders); onClose(); } catch (reason) { setError(String(reason)); } finally { setBusy(false); } }
+  return <div className="confirm-overlay" role="dialog" aria-modal="true" aria-labelledby="folder-title"><form className="folder-editor" onSubmit={submit}><h2 id="folder-title">{dialog.mode === "create" ? "Новая папка" : "Переименовать папку"}</h2><input autoFocus value={name} maxLength={80} onChange={(event) => setName(event.target.value)} aria-label="Название папки" />{error && <div className="error">{error}</div>}<div><button type="button" className="secondary" onClick={onClose}>Отмена</button><button className="compose-button" disabled={busy || !name.trim()}>{busy ? "Сохраняем…" : "Сохранить"}</button></div></form></div>;
+}
+
+function AccountScreen({ onSaved, onCancel, title = "Войдите в почту" }: { onSaved: (account: Account) => void; onCancel?: () => void; title?: string }) {
+  const [account, setAccount] = useState(defaults); const [password, setPassword] = useState(""); const [error, setError] = useState(""); const [busy, setBusy] = useState(false);
+  async function submit(event: FormEvent) { event.preventDefault(); setBusy(true); setError(""); try { await invoke("replace_account", { account, password }); onSaved(account); } catch (reason) { setError(String(reason)); } finally { setBusy(false); } }
+  return <main className="account-screen"><form onSubmit={submit}><div className="brand large"><img className="brand-logo" src={hobbykaLogo} alt="" /><strong>Почта</strong></div><h1>{title}</h1><p>Адрес сохраняется в настройках приложения, а пароль — в защищённом хранилище компьютера.</p><label>Адрес почты<input type="email" required value={account.email} onChange={(event) => setAccount({ ...account, email: event.target.value })} placeholder="name@yandex.ru" /></label><label>Пароль приложения<input type="password" required value={password} onChange={(event) => setPassword(event.target.value)} /></label>{error && <div className="error">{error}</div>}<div className="account-buttons"><button className="compose-button" disabled={busy}>{busy ? "Проверяем…" : "Войти"}</button>{onCancel && <button type="button" className="secondary" onClick={onCancel}>Отмена</button>}</div></form></main>;
+}
+
+function Compose({ initial, onClose }: { initial: Draft; onClose: () => void }) {
+  const [to, setTo] = useState(initial.to); const [subject, setSubject] = useState(initial.subject); const [attachments, setAttachments] = useState(initial.attachments); const [busy, setBusy] = useState(false); const [error, setError] = useState(""); const editor = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (editor.current) editor.current.innerHTML = initial.html; }, []);
+  async function attach() { const paths = await open({ multiple: true, directory: false }); if (!paths) return; try { const next = await invoke<LocalAttachment[]>("inspect_attachments", { paths: Array.isArray(paths) ? paths : [paths] }); const merged = [...attachments, ...next.filter((item) => !attachments.some((existing) => existing.path === item.path))]; if (merged.reduce((sum, item) => sum + item.size, 0) > 25 * 1024 * 1024) { setError("Общий размер вложений больше 25 МБ"); return; } setAttachments(merged); setError(""); } catch (reason) { setError(String(reason)); } }
+  async function sendMessage() { if (!editor.current) return; setBusy(true); setError(""); try { await invoke("send_message", { outgoing: { to, subject, text: editor.current.innerText || initial.text, html: editor.current.innerHTML, attachments: attachments.map((item) => item.path) } }); onClose(); } catch (reason) { setError(String(reason)); } finally { setBusy(false); } }
   function format(command: "bold" | "italic" | "underline") { editor.current?.focus(); document.execCommand(command); }
-  return <section className="compose"><header><strong>Новое письмо</strong><button onClick={onClose}>×</button></header><input placeholder="Кому" type="email" value={to} onChange={(event) => setTo(event.target.value)} /><input placeholder="Тема" value={subject} onChange={(event) => setSubject(event.target.value)} /><div ref={editor} className="compose-editor" contentEditable data-placeholder="Напишите сообщение…" />{attachments.length > 0 && <div className="attachments">{attachments.map((path) => <button key={path} onClick={() => setAttachments((items) => items.filter((item) => item !== path))}>{path.split(/[\\/]/).pop()} ×</button>)}</div>}{error && <div className="error">{error}</div>}<footer><button className="compose-button" disabled={busy || !to} onClick={() => void send()}>{busy ? "Отправляем…" : "Отправить"}</button><button className="format" onClick={() => format("bold")} title="Жирный"><b>Ж</b></button><button className="format" onClick={() => format("italic")} title="Курсив"><i>К</i></button><button className="format" onClick={() => format("underline")} title="Подчёркнутый"><u>П</u></button><button className="format" onClick={() => void attach()} title="Прикрепить файл">⌕</button></footer></section>;
+  const total = attachments.reduce((sum, item) => sum + item.size, 0);
+  return <section className="compose"><header><strong>Новое письмо</strong><button onClick={onClose}>×</button></header><input placeholder="Кому" type="email" value={to} onChange={(event) => setTo(event.target.value)} /><input placeholder="Тема" value={subject} onChange={(event) => setSubject(event.target.value)} /><div ref={editor} className="compose-editor" contentEditable data-placeholder="Напишите сообщение…" />{attachments.length > 0 && <div className="compose-attachments">{attachments.map((attachment) => <div key={attachment.path}><span>📎</span><strong>{attachment.filename}</strong><small>{humanSize(attachment.size)}</small><button onClick={() => setAttachments((items) => items.filter((item) => item.path !== attachment.path))} aria-label={`Убрать ${attachment.filename}`}>×</button></div>)}<p>Всего: {humanSize(total)} из 25 МБ</p></div>}{error && <div className="error">{error}</div>}<footer><button className="compose-button" disabled={busy || !to} onClick={() => void sendMessage()}>{busy ? "Отправляем…" : "Отправить"}</button><button className="format" onClick={() => format("bold")} title="Жирный"><b>Ж</b></button><button className="format" onClick={() => format("italic")} title="Курсив"><i>К</i></button><button className="format" onClick={() => format("underline")} title="Подчёркнутый"><u>П</u></button><button className="attach-button" onClick={() => void attach()}>📎 Прикрепить файлы</button></footer></section>;
 }

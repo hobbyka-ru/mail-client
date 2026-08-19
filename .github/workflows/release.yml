@@ -1,0 +1,83 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --draft --title "Почта $GITHUB_REF_NAME" --notes "Установщики приложения «Почта» для macOS и Windows. Выберите файл с архитектурой вашего компьютера: aarch64/arm64 для ARM, x64 для Intel или AMD."
+
+  macos:
+    needs: create-release
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15, macos-15-intel]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.25.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm tauri build --bundles dmg
+      - name: Upload installer
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          find src-tauri/target/release/bundle/dmg -name '*.dmg' -print0 | while IFS= read -r -d '' file; do
+            gh release upload "$GITHUB_REF_NAME" "$file" --repo "$GITHUB_REPOSITORY" --clobber
+          done
+
+  windows:
+    needs: create-release
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [windows-2025, windows-11-arm]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.25.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm tauri build --bundles msi,nsis
+      - name: Upload installers
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          Get-ChildItem src-tauri/target/release/bundle -Recurse -Include *.msi,*.exe | ForEach-Object {
+            gh release upload $env:GITHUB_REF_NAME $_.FullName --repo $env:GITHUB_REPOSITORY --clobber
+          }
+
+  publish:
+    needs: [macos, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false --latest
